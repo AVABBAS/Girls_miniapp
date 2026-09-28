@@ -48,6 +48,7 @@ jobs:
           test -f docs/DEFINITION_OF_DONE.md
           test -f docs/AGENT_PROGRESS.md
           test -f docs/AUTONOMOUS_PROMPT.md
+          test -f .github/codex/config.toml
 
       - name: Configure git
         run: |
@@ -71,10 +72,12 @@ jobs:
           model: Atria-Dawn-Preview
           effort: high
           sandbox: workspace-write
+          safety-strategy: drop-sudo
+          codex-home: .github/codex
           working-directory: ${{ github.workspace }}
           prompt-file: docs/AUTONOMOUS_PROMPT.md
           output-file: .agent-last-message.txt
-          codex-args: '--full-auto --ephemeral'
+          codex-args: '--ephemeral'
 
       - name: Save agent summary
         if: always() && env.DRY_RUN != 'true'
