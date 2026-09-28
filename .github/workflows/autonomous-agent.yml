@@ -3,14 +3,22 @@ name: Autonomous Atria Development
 on:
   workflow_dispatch:
     inputs:
-      max_hours:
-        description: "Maximum autonomous runtime (hours)"
+      run_hours:
+        description: "Target runtime for this run (max 5.5; two runs can provide ~10h)"
         required: false
-        default: "10"
+        default: "5"
       max_tokens:
-        description: "Target maximum Atria token budget"
+        description: "Target cumulative Atria token budget"
         required: false
         default: "100000000"
+      continuation:
+        description: "Continuation number (1 or 2)"
+        required: false
+        default: "1"
+      max_continuations:
+        description: "Maximum number of sequential runs"
+        required: false
+        default: "2"
       dry_run:
         description: "Run in read-only mode"
         required: false
@@ -28,10 +36,12 @@ concurrency:
 jobs:
   autonomous-development:
     runs-on: ubuntu-latest
-    timeout-minutes: 600
+    timeout-minutes: 330
     env:
-      MAX_HOURS: ${{ github.event.inputs.max_hours || '10' }}
+      RUN_HOURS: ${{ github.event.inputs.run_hours || '5' }}
       MAX_TOKENS: ${{ github.event.inputs.max_tokens || '100000000' }}
+      CONTINUATION: ${{ github.event.inputs.continuation || '1' }}
+      MAX_CONTINUATIONS: ${{ github.event.inputs.max_continuations || '2' }}
       DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
 
     steps:
@@ -79,30 +89,7 @@ jobs:
           CODEX_HOME="/home/guest/.codex"
           sudo mkdir -p "$CODEX_HOME"
           sudo tee "$CODEX_HOME/atria-catalog.json" >/dev/null <<'EOF'
-          {
-            "models": [
-              {
-                "slug": "Atria-Dawn-Preview",
-                "display_name": "Atria-Dawn-Preview",
-                "base_instructions": "You are a coding agent running in the Codex CLI. You collaborate with the user in a shared workspace to accomplish their software engineering goals. You can only receive text input. Images, screenshots, PDFs, and other binary attachments are not available to you. If the user refers to an attachment you cannot see, say so plainly and ask them to paste the relevant text instead.",
-                "supported_reasoning_levels": [
-                  {"effort": "low", "description": "Fast responses with lighter reasoning"},
-                  {"effort": "medium", "description": "Balances speed and reasoning depth"},
-                  {"effort": "high", "description": "Greater reasoning depth for complex problems"}
-                ],
-                "shell_type": "unified_exec",
-                "visibility": "list",
-                "supported_in_api": true,
-                "priority": 1,
-                "support_verbosity": false,
-                "truncation_policy": {"mode": "tokens", "limit": 10000},
-                "experimental_supported_tools": [],
-                "context_window": 256000,
-                "max_context_window": 256000,
-                "input_modalities": ["text"]
-              }
-            ]
-          }
+          {"models":[{"slug":"Atria-Dawn-Preview","display_name":"Atria-Dawn-Preview","base_instructions":"You are a coding agent running in the Codex CLI. You collaborate with the user in a shared workspace to accomplish their software engineering goals. You can only receive text input.","supported_reasoning_levels":[{"effort":"low","description":"Fast responses with lighter reasoning"},{"effort":"medium","description":"Balances speed and reasoning depth"},{"effort":"high","description":"Greater reasoning depth for complex problems"}],"shell_type":"unified_exec","visibility":"list","supported_in_api":true,"priority":1,"support_verbosity":false,"truncation_policy":{"mode":"tokens","limit":10000},"experimental_supported_tools":[],"context_window":256000,"max_context_window":256000,"input_modalities":["text"]}]}
           EOF
           sudo tee "$CODEX_HOME/config.toml" >/dev/null <<'EOF'
           model = "Atria-Dawn-Preview"
@@ -152,11 +139,7 @@ jobs:
         if: always() && env.DRY_RUN != 'true'
         run: |
           if [ -f .agent-last-message.txt ]; then
-            {
-              echo "## Last autonomous agent report"
-              echo
-              cat .agent-last-message.txt
-            } >> "$GITHUB_STEP_SUMMARY"
+            { echo "## Autonomous run $CONTINUATION report"; echo; cat .agent-last-message.txt; } >> "$GITHUB_STEP_SUMMARY"
           fi
           rm -f .agent-last-message.txt
 
@@ -176,11 +159,18 @@ jobs:
         run: |
           set -euo pipefail
           git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: autonomous development progress"
-          fi
+          if ! git diff --cached --quiet; then git commit -m "chore: autonomous development progress (run $CONTINUATION)"; fi
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin HEAD:main
+
+      - name: Dispatch next autonomous run
+        if: env.DRY_RUN != 'true' && success() && fromJSON(env.CONTINUATION) < fromJSON(env.MAX_CONTINUATIONS)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          NEXT=$((CONTINUATION + 1))
+          gh workflow run autonomous-agent.yml --repo "$GITHUB_REPOSITORY" -f run_hours="$RUN_HOURS" -f max_tokens="$MAX_TOKENS" -f continuation="$NEXT" -f max_continuations="$MAX_CONTINUATIONS" -f dry_run="$DRY_RUN"
 
       - name: Final status
         if: always()
