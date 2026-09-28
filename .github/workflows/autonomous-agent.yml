@@ -35,10 +35,20 @@ jobs:
       DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
 
     steps:
+      - name: Create dedicated Codex user
+        run: |
+          set -euo pipefail
+          if ! id guest >/dev/null 2>&1; then
+            sudo adduser --system --home /home/guest --shell /bin/bash --group guest
+          fi
+          sudo usermod -a -G guest runner
+          sudo usermod -a -G runner guest
+
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Verify autonomous contract
         run: |
@@ -62,19 +72,19 @@ jobs:
           sed -n '1,220p' AGENTS.md
           sed -n '1,260p' docs/ROADMAP.md
 
-      - name: Prepare ephemeral Atria Codex home
+      - name: Prepare Codex workspace and Atria model catalog
         if: env.DRY_RUN != 'true'
         run: |
           set -euo pipefail
-          CODEX_CI_HOME="/home/runner/.codex-atria"
-          mkdir -p "$CODEX_CI_HOME"
-          cat > "$CODEX_CI_HOME/atria-catalog.json" <<'EOF'
+          CODEX_HOME="/home/guest/.codex"
+          sudo mkdir -p "$CODEX_HOME"
+          sudo tee "$CODEX_HOME/atria-catalog.json" >/dev/null <<'EOF'
           {
             "models": [
               {
                 "slug": "Atria-Dawn-Preview",
                 "display_name": "Atria-Dawn-Preview",
-                "base_instructions": "You are a coding agent running in the Codex CLI. You collaborate with the user in a shared workspace to accomplish their software engineering goals. You can only receive text input. Images, screenshots, PDFs, and other binary attachments are not available to you.",
+                "base_instructions": "You are a coding agent running in the Codex CLI. You collaborate with the user in a shared workspace to accomplish their software engineering goals. You can only receive text input. Images, screenshots, PDFs, and other binary attachments are not available to you. If the user refers to an attachment you cannot see, say so plainly and ask them to paste the relevant text instead.",
                 "supported_reasoning_levels": [
                   {"effort": "low", "description": "Fast responses with lighter reasoning"},
                   {"effort": "medium", "description": "Balances speed and reasoning depth"},
@@ -94,10 +104,10 @@ jobs:
             ]
           }
           EOF
-          cat > "$CODEX_CI_HOME/config.toml" <<EOF
+          sudo tee "$CODEX_HOME/config.toml" >/dev/null <<'EOF'
           model = "Atria-Dawn-Preview"
           model_provider = "atria"
-          model_catalog_json = "$CODEX_CI_HOME/atria-catalog.json"
+          model_catalog_json = "/home/guest/.codex/atria-catalog.json"
           approval_policy = "never"
           sandbox_mode = "workspace-write"
 
@@ -110,15 +120,10 @@ jobs:
           env_key = "ATRIA_API_KEY"
           wire_api = "responses"
           EOF
-
-      - name: Prepare unprivileged Codex workspace
-        if: env.DRY_RUN != 'true'
-        run: |
-          set -euo pipefail
-          # Codex runs as the unprivileged nobody account so the API key is not
-          # exposed to a privileged process. Give that account ownership of the
-          # checked-out workspace and its ephemeral Codex home.
-          sudo chown -R nobody:nogroup "$GITHUB_WORKSPACE" /home/runner/.codex-atria
+          sudo chown -R guest:guest "$CODEX_HOME"
+          sudo chown -R runner:guest "$GITHUB_WORKSPACE"
+          sudo chmod -R g+rwX "$GITHUB_WORKSPACE"
+          sudo find "$GITHUB_WORKSPACE" -type d -exec chmod g+s {} +
 
       - name: Run Atria autonomous agent
         if: env.DRY_RUN != 'true'
@@ -130,12 +135,18 @@ jobs:
           effort: high
           sandbox: workspace-write
           safety-strategy: unprivileged-user
-          codex-user: nobody
-          codex-home: /home/runner/.codex-atria
+          codex-user: guest
           working-directory: ${{ github.workspace }}
           prompt-file: docs/AUTONOMOUS_PROMPT.md
           output-file: .agent-last-message.txt
           codex-args: '--ephemeral'
+
+      - name: Restore runner write access
+        if: always()
+        run: |
+          set -euo pipefail
+          sudo chown -R runner:guest "$GITHUB_WORKSPACE"
+          sudo chmod -R g+rwX "$GITHUB_WORKSPACE"
 
       - name: Save agent summary
         if: always() && env.DRY_RUN != 'true'
@@ -160,14 +171,15 @@ jobs:
 
       - name: Commit and push verified changes
         if: env.DRY_RUN != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git add -A
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: autonomous development progress"
           fi
-          git commit -m "chore: autonomous development progress"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin HEAD:main
 
       - name: Final status
