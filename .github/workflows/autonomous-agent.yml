@@ -111,6 +111,15 @@ jobs:
           wire_api = "responses"
           EOF
 
+      - name: Prepare unprivileged Codex workspace
+        if: env.DRY_RUN != 'true'
+        run: |
+          set -euo pipefail
+          # Codex runs as the unprivileged nobody account so the API key is not
+          # exposed to a privileged process. Give that account ownership of the
+          # checked-out workspace and its ephemeral Codex home.
+          sudo chown -R nobody:nogroup "$GITHUB_WORKSPACE" /home/runner/.codex-atria
+
       - name: Run Atria autonomous agent
         if: env.DRY_RUN != 'true'
         uses: openai/codex-action@main
@@ -120,7 +129,8 @@ jobs:
           model: Atria-Dawn-Preview
           effort: high
           sandbox: workspace-write
-          safety-strategy: none
+          safety-strategy: unprivileged-user
+          codex-user: nobody
           codex-home: /home/runner/.codex-atria
           working-directory: ${{ github.workspace }}
           prompt-file: docs/AUTONOMOUS_PROMPT.md
