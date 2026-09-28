@@ -36,7 +36,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -70,7 +70,7 @@ jobs:
           responses-api-endpoint: https://api.atria-asi.ai/v1/responses
           model: Atria-Dawn-Preview
           effort: high
-          permission-profile: ":workspace"
+          sandbox: workspace-write
           working-directory: ${{ github.workspace }}
           prompt-file: docs/AUTONOMOUS_PROMPT.md
           output-file: .agent-last-message.txt
