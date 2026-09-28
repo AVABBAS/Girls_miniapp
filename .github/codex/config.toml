@@ -1,9 +1,0 @@
-# Trusted CI-only Codex configuration.
-# The workflow already constrains Codex to workspace-write and drop-sudo.
-# Never expose secrets here.
-
-approval_policy = "never"
-sandbox_mode = "workspace-write"
-
-[sandbox_workspace_write]
-network_access = true
