@@ -9,3 +9,6 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+
+# Codex runtime state is ephemeral and must never be committed.
+.github/codex/
