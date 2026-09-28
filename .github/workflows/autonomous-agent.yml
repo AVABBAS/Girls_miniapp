@@ -48,7 +48,6 @@ jobs:
           test -f docs/DEFINITION_OF_DONE.md
           test -f docs/AGENT_PROGRESS.md
           test -f docs/AUTONOMOUS_PROMPT.md
-          test -f .github/codex/config.toml
 
       - name: Configure git
         run: |
@@ -63,6 +62,55 @@ jobs:
           sed -n '1,220p' AGENTS.md
           sed -n '1,260p' docs/ROADMAP.md
 
+      - name: Prepare ephemeral Atria Codex home
+        if: env.DRY_RUN != 'true'
+        run: |
+          set -euo pipefail
+          CODEX_CI_HOME="/home/runner/.codex-atria"
+          mkdir -p "$CODEX_CI_HOME"
+          cat > "$CODEX_CI_HOME/atria-catalog.json" <<'EOF'
+          {
+            "models": [
+              {
+                "slug": "Atria-Dawn-Preview",
+                "display_name": "Atria-Dawn-Preview",
+                "base_instructions": "You are a coding agent running in the Codex CLI. You collaborate with the user in a shared workspace to accomplish their software engineering goals. You can only receive text input. Images, screenshots, PDFs, and other binary attachments are not available to you.",
+                "supported_reasoning_levels": [
+                  {"effort": "low", "description": "Fast responses with lighter reasoning"},
+                  {"effort": "medium", "description": "Balances speed and reasoning depth"},
+                  {"effort": "high", "description": "Greater reasoning depth for complex problems"}
+                ],
+                "shell_type": "unified_exec",
+                "visibility": "list",
+                "supported_in_api": true,
+                "priority": 1,
+                "support_verbosity": false,
+                "truncation_policy": {"mode": "tokens", "limit": 10000},
+                "experimental_supported_tools": [],
+                "context_window": 256000,
+                "max_context_window": 256000,
+                "input_modalities": ["text"]
+              }
+            ]
+          }
+          EOF
+          cat > "$CODEX_CI_HOME/config.toml" <<EOF
+          model = "Atria-Dawn-Preview"
+          model_provider = "atria"
+          model_catalog_json = "$CODEX_CI_HOME/atria-catalog.json"
+          approval_policy = "never"
+          sandbox_mode = "workspace-write"
+
+          [sandbox_workspace_write]
+          network_access = true
+
+          [model_providers.atria]
+          name = "Atria"
+          base_url = "https://api.atria-asi.ai/v1"
+          env_key = "ATRIA_API_KEY"
+          wire_api = "responses"
+          EOF
+
       - name: Run Atria autonomous agent
         if: env.DRY_RUN != 'true'
         uses: openai/codex-action@main
@@ -73,7 +121,7 @@ jobs:
           effort: high
           sandbox: workspace-write
           safety-strategy: drop-sudo
-          codex-home: .github/codex
+          codex-home: /home/runner/.codex-atria
           working-directory: ${{ github.workspace }}
           prompt-file: docs/AUTONOMOUS_PROMPT.md
           output-file: .agent-last-message.txt
