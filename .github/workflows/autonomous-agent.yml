@@ -93,7 +93,6 @@ jobs:
           EOF
           sudo tee "$CODEX_HOME/config.toml" >/dev/null <<'EOF'
           model = "Atria-Dawn-Preview"
-          model_provider = "atria"
           model_catalog_json = "/home/guest/.codex/atria-catalog.json"
           approval_policy = "never"
           sandbox_mode = "workspace-write"
@@ -101,11 +100,6 @@ jobs:
           [sandbox_workspace_write]
           network_access = true
 
-          [model_providers.atria]
-          name = "Atria"
-          base_url = "https://api.atria-asi.ai/v1"
-          env_key = "ATRIA_API_KEY"
-          wire_api = "responses"
           EOF
           sudo chown -R guest:guest "$CODEX_HOME"
           sudo chown -R runner:guest "$GITHUB_WORKSPACE"
