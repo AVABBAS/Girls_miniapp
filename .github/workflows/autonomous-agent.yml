@@ -1,22 +1,20 @@
-name: Autonomous Development Agent
+name: Autonomous Atria Development
 
 on:
   workflow_dispatch:
     inputs:
       max_hours:
-        description: "Maximum runtime in hours"
+        description: "Maximum autonomous runtime (hours)"
         required: false
         default: "10"
       max_tokens:
-        description: "Maximum model-token budget"
+        description: "Target maximum Atria token budget"
         required: false
         default: "100000000"
       dry_run:
-        description: "Plan/check only; do not write"
+        description: "Run in read-only mode"
         required: false
         default: "false"
-  schedule:
-    - cron: "0 */6 * * *"
 
 permissions:
   contents: write
@@ -24,72 +22,95 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: autonomous-development
+  group: girls-miniapp-autonomous
   cancel-in-progress: false
 
 jobs:
-  agent:
+  autonomous-development:
     runs-on: ubuntu-latest
     timeout-minutes: 600
     env:
       MAX_HOURS: ${{ github.event.inputs.max_hours || '10' }}
       MAX_TOKENS: ${{ github.event.inputs.max_tokens || '100000000' }}
       DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-      REPO: ${{ github.repository }}
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Verify agent contract
+      - name: Verify autonomous contract
         run: |
+          set -euo pipefail
           test -f AGENTS.md
           test -f docs/ROADMAP.md
           test -f docs/DEFINITION_OF_DONE.md
           test -f docs/AGENT_PROGRESS.md
+          test -f docs/AUTONOMOUS_PROMPT.md
 
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-        continue-on-error: true
-
-      - name: Prepare workspace
+      - name: Configure git
         run: |
           git config user.name "Girls Mini App Autonomous Agent"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git status --short
-          echo "Runtime limit: $MAX_HOURS hours"
-          echo "Token budget: $MAX_TOKENS"
-          echo "Dry run: $DRY_RUN"
 
-      # IMPORTANT:
-      # Install the selected Atria-compatible CLI/SDK here after choosing the
-      # provider endpoint and agent runner. The API key must be stored as a
-      # GitHub Actions secret, never in this file or the repository.
-      #
-      # Required secret name:
-      #   ATRIA_API_KEY
-      #
-      # The runner should invoke the model with AGENTS.md as the system contract,
-      # preserve docs/AGENT_PROGRESS.md, run tests, and commit verified changes.
-      - name: Agent runner placeholder
+      - name: Dry-run inspection
         if: env.DRY_RUN == 'true'
         run: |
-          echo "Dry run: agent execution intentionally skipped."
-          echo "Configure the Atria-compatible runner before enabling autonomous writes."
+          echo "Dry run enabled."
+          git status --short
+          sed -n '1,220p' AGENTS.md
+          sed -n '1,260p' docs/ROADMAP.md
 
-      - name: Repository safety check
+      - name: Run Atria autonomous agent
+        if: env.DRY_RUN != 'true'
+        uses: openai/codex-action@main
+        with:
+          openai-api-key: ${{ secrets.ATRIA_API_KEY }}
+          responses-api-endpoint: https://api.atria-asi.ai/v1/responses
+          model: Atria-Dawn-Preview
+          effort: high
+          permission-profile: ":workspace"
+          working-directory: ${{ github.workspace }}
+          prompt-file: docs/AUTONOMOUS_PROMPT.md
+          output-file: .agent-last-message.txt
+          codex-args: '--full-auto --ephemeral'
+
+      - name: Save agent summary
+        if: always() && env.DRY_RUN != 'true'
         run: |
-          if git grep -nE '(sk-[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})' -- ':!docs/AGENTS.md' ':!docs/ROADMAP.md' ':!.github/workflows/autonomous-agent.yml'; then
+          if [ -f .agent-last-message.txt ]; then
+            {
+              echo "## Last autonomous agent report"
+              echo
+              cat .agent-last-message.txt
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          rm -f .agent-last-message.txt
+
+      - name: Security scan for obvious leaked credentials
+        if: always()
+        run: |
+          set -euo pipefail
+          if git grep -nE '(sk-[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|atr_[A-Za-z0-9_-]{20,})' -- ':!docs/AUTONOMOUS_PROMPT.md'; then
             echo "Potential credential detected in tracked files."
             exit 1
           fi
+
+      - name: Commit and push verified changes
+        if: env.DRY_RUN != 'true'
+        run: |
+          set -euo pipefail
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: autonomous development progress"
+          git push origin HEAD:main
 
       - name: Final status
         if: always()
         run: |
           git status --short
-          git log -5 --oneline
+          git log -8 --oneline
