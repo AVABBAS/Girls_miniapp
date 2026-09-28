@@ -1,14 +1,44 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 build/
-coverage/
-.env
-.env.*
-!.env.example
-*.log
-.DS_Store
-.vscode/
-.idea/
+*.tsbuildinfo
 
-# Codex runtime state is ephemeral and must never be committed.
-.github/codex/
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Database local files
+# SQLite local files
+*.sqlite
+*.sqlite-journal
+*.db
+*.db-wal
+*.db-shm
+sqlite/
+data/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Test coverage
+coverage/
+
+# Ephemeral runtime state
+.codex/tmp/
+
+# Local npm config (runner-specific cache path)
+.npmrc
