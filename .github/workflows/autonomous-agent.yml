@@ -1,0 +1,95 @@
+name: Autonomous Development Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_hours:
+        description: "Maximum runtime in hours"
+        required: false
+        default: "10"
+      max_tokens:
+        description: "Maximum model-token budget"
+        required: false
+        default: "100000000"
+      dry_run:
+        description: "Plan/check only; do not write"
+        required: false
+        default: "false"
+  schedule:
+    - cron: "0 */6 * * *"
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: autonomous-development
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 600
+    env:
+      MAX_HOURS: ${{ github.event.inputs.max_hours || '10' }}
+      MAX_TOKENS: ${{ github.event.inputs.max_tokens || '100000000' }}
+      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify agent contract
+        run: |
+          test -f AGENTS.md
+          test -f docs/ROADMAP.md
+          test -f docs/DEFINITION_OF_DONE.md
+          test -f docs/AGENT_PROGRESS.md
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+        continue-on-error: true
+
+      - name: Prepare workspace
+        run: |
+          git config user.name "Girls Mini App Autonomous Agent"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git status --short
+          echo "Runtime limit: $MAX_HOURS hours"
+          echo "Token budget: $MAX_TOKENS"
+          echo "Dry run: $DRY_RUN"
+
+      # IMPORTANT:
+      # Install the selected Atria-compatible CLI/SDK here after choosing the
+      # provider endpoint and agent runner. The API key must be stored as a
+      # GitHub Actions secret, never in this file or the repository.
+      #
+      # Required secret name:
+      #   ATRIA_API_KEY
+      #
+      # The runner should invoke the model with AGENTS.md as the system contract,
+      # preserve docs/AGENT_PROGRESS.md, run tests, and commit verified changes.
+      - name: Agent runner placeholder
+        if: env.DRY_RUN == 'true'
+        run: |
+          echo "Dry run: agent execution intentionally skipped."
+          echo "Configure the Atria-compatible runner before enabling autonomous writes."
+
+      - name: Repository safety check
+        run: |
+          if git grep -nE '(sk-[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})' -- ':!docs/AGENTS.md' ':!docs/ROADMAP.md' ':!.github/workflows/autonomous-agent.yml'; then
+            echo "Potential credential detected in tracked files."
+            exit 1
+          fi
+
+      - name: Final status
+        if: always()
+        run: |
+          git status --short
+          git log -5 --oneline
