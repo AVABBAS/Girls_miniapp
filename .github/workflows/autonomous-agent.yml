@@ -106,8 +106,60 @@ jobs:
           sudo chmod -R g+rwX "$GITHUB_WORKSPACE"
           sudo find "$GITHUB_WORKSPACE" -type d -exec chmod g+s {} +
 
-      - name: Run Atria autonomous agent
+      - name: Run Atria autonomous agent (attempt 1)
+        id: atria_attempt_1
         if: env.DRY_RUN != 'true'
+        continue-on-error: true
+        uses: openai/codex-action@main
+        with:
+          openai-api-key: ${{ secrets.ATRIA_API_KEY }}
+          responses-api-endpoint: https://api.atria-asi.ai/v1/responses
+          model: Atria-Dawn-Preview
+          effort: high
+          sandbox: workspace-write
+          safety-strategy: unprivileged-user
+          codex-user: guest
+          working-directory: ${{ github.workspace }}
+          prompt-file: docs/AUTONOMOUS_PROMPT.md
+          output-file: .agent-last-message.txt
+          codex-args: '--ephemeral'
+
+      - name: Back off after Atria failure before retry
+        if: env.DRY_RUN != 'true' && steps.atria_attempt_1.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          echo "Atria attempt 1 failed; waiting 90 seconds before retry."
+          sleep 90
+
+      - name: Run Atria autonomous agent (attempt 2)
+        id: atria_attempt_2
+        if: env.DRY_RUN != 'true' && steps.atria_attempt_1.outcome == 'failure'
+        continue-on-error: true
+        uses: openai/codex-action@main
+        with:
+          openai-api-key: ${{ secrets.ATRIA_API_KEY }}
+          responses-api-endpoint: https://api.atria-asi.ai/v1/responses
+          model: Atria-Dawn-Preview
+          effort: high
+          sandbox: workspace-write
+          safety-strategy: unprivileged-user
+          codex-user: guest
+          working-directory: ${{ github.workspace }}
+          prompt-file: docs/AUTONOMOUS_PROMPT.md
+          output-file: .agent-last-message.txt
+          codex-args: '--ephemeral'
+
+      - name: Back off after second Atria failure before retry
+        if: env.DRY_RUN != 'true' && steps.atria_attempt_1.outcome == 'failure' && steps.atria_attempt_2.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          echo "Atria attempt 2 failed; waiting 180 seconds before final retry."
+          sleep 180
+
+      - name: Run Atria autonomous agent (attempt 3)
+        id: atria_attempt_3
+        if: env.DRY_RUN != 'true' && steps.atria_attempt_1.outcome == 'failure' && steps.atria_attempt_2.outcome == 'failure'
+        continue-on-error: true
         uses: openai/codex-action@main
         with:
           openai-api-key: ${{ secrets.ATRIA_API_KEY }}
@@ -147,7 +199,7 @@ jobs:
           fi
 
       - name: Commit and push verified changes
-        if: env.DRY_RUN != 'true'
+        if: always() && env.DRY_RUN != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -156,9 +208,10 @@ jobs:
           if ! git diff --cached --quiet; then git commit -m "chore: autonomous development progress (run $CONTINUATION)"; fi
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin HEAD:main
+          echo "Committed checkpoint state and pushed to main."
 
       - name: Dispatch next autonomous run
-        if: env.DRY_RUN != 'true' && success() && fromJSON(env.CONTINUATION) < fromJSON(env.MAX_CONTINUATIONS)
+        if: always() && env.DRY_RUN != 'true' && fromJSON(env.CONTINUATION) < fromJSON(env.MAX_CONTINUATIONS)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
