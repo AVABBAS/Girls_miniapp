@@ -11,7 +11,10 @@ Your mission is to take the repository from its current state toward a productio
 - At the beginning, inspect the current UTC time and plan work so the current run has time to verify and commit progress.
 - Keep a safety margin before the workflow deadline. Do not start a large implementation unit if you cannot reasonably finish, test, update progress, and commit it during this run.
 - Commit coherent verified progress frequently; never leave a large uncommitted batch until the end.
+- Treat the workspace as a resumable checkpoint system: after each small coherent implementation unit, run the relevant checks and commit. Aim for a checkpoint at least every 10 minutes of active implementation so a rate-limit failure cannot discard a large amount of work.
+- If the API temporarily rate-limits the session, stop starting new work, leave the repository coherent, record the current task and exact next action in docs/AGENT_PROGRESS.md, and rely on the workflow retry/continuation mechanism.
 - Target cumulative model-token budget: 100,000,000 tokens. This is a project target, not a guaranteed API-enforced quota.
+- Atria may return HTTP 429 for rate limiting or quota conditions. Never interpret a 429 as permission to keep hammering the API; preserve work and let the workflow backoff/retry.
 
 ## Core operating rules
 - Work continuously until the roadmap is complete, the current run's safe time budget is reached, or a genuine human-only blocker remains.
